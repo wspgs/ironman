@@ -1,0 +1,1015 @@
+--[[
+    ===================================================================
+    🇹🇭 TANG HUB — IRON MAN: PLAYGROUND (ฉบับภาษาไทย 100% + ปลดล็อกทุกความโกง)
+    ===================================================================
+    • ปลดล็อกชุด VIP / GamePass ที่ต้องเติมเงินซื้อทั้งหมด (Mk85, Mk44, ModelPrime ฯลฯ)
+    • ระบบไร้คูลดาวน์สกิล (No Cooldown) + สแปมสกิล/มิสไซล์รัวไม่จำกัด
+    • Kill Aura กวาดล้างทั้งแมพในคลิกเดียว / ลูปเกิดใหม่ปุ๊บตายปั๊บ
+    • บูสต์บินความเร็วแสง x20, วิ่งเร็ว 500 studs, Noclip, ESP มองทะลุ
+    • รองรับทั้งคอม (PC) และมือถือ (Mobile) มีปุ่มลอยกดเปิด/ปิดหน้าต่าง
+    ===================================================================
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- โหลด UI Library (TANG HUB)
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/wspgs/ui5/refs/heads/main/tanghub"))()
+Library.WhitelistedUsers = {LocalPlayer.Name, "tanghub88901"}
+
+-- อ้างอิงรีโมทของเกมอย่างปลอดภัย
+local IronmanLocal = ReplicatedStorage:WaitForChild("IronmanLocal", 15)
+local Events = IronmanLocal and IronmanLocal:WaitForChild("Events", 15)
+local DamageEvent = Events and Events:WaitForChild("DamageEvent", 10)
+local RequestSuitEvent = Events and Events:WaitForChild("RequestSuitEvent", 10)
+local EjectSuitEvent = Events and Events:WaitForChild("EjectSuitEvent", 10)
+local DestroySuitEvent = Events and Events:WaitForChild("DestroySuitEvent", 10)
+local SentryEvent = Events and Events:WaitForChild("SentryEvent", 10)
+local CombatEvent = Events and Events:WaitForChild("CombatEvent", 10)
+local FlaresEvent = Events and Events:WaitForChild("FlaresEvent", 10)
+local AbilityEvent = Events and Events:WaitForChild("AbilityEvent", 10)
+
+-- ตัวแปรสถานะฟังก์ชั่นทั้งหมด
+local Config = {
+    -- การโจมตี
+    KillAura = false,
+    KillAuraDelay = 0.2,
+    KillAuraTargetPart = "HumanoidRootPart",
+    KillAuraNearestOnly = false,
+    KillAuraRange = 3000,
+    SpawnKillLoop = false,
+    
+    -- ไร้คูลดาวน์ & สกิลรัว
+    NoCooldown = false,
+    SpamAbility1 = false,
+    SpamAbility2 = false,
+    SpamMissiles = false,
+    SpamExWife = false,
+    SpamRepulsor = false,
+    SpamFlares = false,
+    
+    -- การเคลื่อนที่ & บิน
+    WalkSpeed = 16,
+    JumpPower = 50,
+    SpeedHack = false,
+    FlightBoost = false,
+    FlightMultiplier = 4,
+    Noclip = false,
+    InfJump = false,
+    
+    -- ป้องกัน
+    AntiRagdoll = false,
+    GodmodeLock = false,
+    AntiFallDamage = false,
+    
+    -- การมองเห็น
+    ESP = false,
+    ESPBoxes = true,
+    ESPColor = Color3.fromRGB(45, 125, 255),
+    
+    -- ชุดเกราะที่ต้องซื้อ
+    SelectedPaidSuit = "Mark85",
+    SelectedPlayer = ""
+}
+
+-- รายชื่อเฉพาะชุดเกราะ VIP / GAMEPASS ที่ต้องเติมเงินซื้อเท่านั้น
+local PaidSuits = {
+    "Mark85",       -- GamePass: 1012604523 (Endgame Nanotech)
+    "Mark44",       -- GamePass: 1023347455 (Hulkbuster)
+    "ModelPrime",   -- GamePass: 1621960024 (Model-Prime Armor)
+    "WarMachine2",  -- GamePass: 1031677515 (Heavy Artillery)
+    "IronPatriot"   -- GamePass: 1031567655 (Iron Patriot)
+}
+
+-- ฟังก์ชั่นตัวช่วยทั่วไป
+local function getChar(plr)
+    plr = plr or LocalPlayer
+    return plr.Character
+end
+
+local function getRoot(plr)
+    local char = getChar(plr)
+    return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso"))
+end
+
+local function getSuitModelValue()
+    local char = getChar(LocalPlayer)
+    if char and char:FindFirstChild("Suit") and char.Suit:FindFirstChild("SuitStatus") then
+        local mv = char.Suit.SuitStatus:FindFirstChild("ModelValue")
+        if mv then return mv.Value end
+    end
+    return "Mark85"
+end
+
+local function getNearestTarget()
+    local myRoot = getRoot(LocalPlayer)
+    if not myRoot then return nil end
+    local nearestDist = Config.KillAuraRange
+    local nearestChar = nil
+    
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+            local root = plr.Character:FindFirstChild(Config.KillAuraTargetPart) or plr.Character:FindFirstChild("HumanoidRootPart")
+            if hum and hum.Health > 0 and root then
+                local dist = (root.Position - myRoot.Position).Magnitude
+                if dist < nearestDist then
+                    nearestDist = dist
+                    nearestChar = plr.Character
+                end
+            end
+        end
+    end
+    return nearestChar
+end
+
+-- 1. ฟังก์ชั่นสังหารเป้าหมาย (Kill Target)
+local function attackTarget(targetChar, times)
+    times = times or 1
+    if not targetChar or not DamageEvent then return end
+    local myChar = getChar(LocalPlayer)
+    local myRoot = getRoot(LocalPlayer)
+    if not myRoot then return end
+    
+    local targetPart = targetChar:FindFirstChild(Config.KillAuraTargetPart) or targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
+    if not targetPart then return end
+    
+    local myHead = myChar and myChar:FindFirstChild("Head") or myRoot
+    local origin = myHead.Position
+    local dir = (targetPart.Position - origin).Unit
+    
+    for i = 1, times do
+        pcall(function()
+            DamageEvent:FireServer(targetChar, targetPart, nil, origin, dir)
+        end)
+    end
+end
+
+-- ลูป Kill Aura
+task.spawn(function()
+    while true do
+        if Config.KillAura or Config.SpawnKillLoop then
+            local myRoot = getRoot(LocalPlayer)
+            if myRoot then
+                if Config.KillAuraNearestOnly then
+                    local target = getNearestTarget()
+                    if target then
+                        attackTarget(target, 2)
+                    end
+                else
+                    for _, plr in ipairs(Players:GetPlayers()) do
+                        if plr ~= LocalPlayer and plr.Character then
+                            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+                            local root = plr.Character:FindFirstChild("HumanoidRootPart")
+                            if hum and hum.Health > 0 and root then
+                                local dist = (root.Position - myRoot.Position).Magnitude
+                                if dist <= Config.KillAuraRange then
+                                    attackTarget(plr.Character, Config.SpawnKillLoop and 4 or 1)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(Config.KillAuraDelay)
+        else
+            task.wait(0.4)
+        end
+    end
+end)
+
+-- 2. กวาดล้างทั้งแมพใน 1 คลิก (One-Shot Wipe All)
+local function killAllOnce()
+    if not DamageEvent then return end
+    local myChar = getChar(LocalPlayer)
+    local myRoot = getRoot(LocalPlayer)
+    if not myRoot then return end
+    local myHead = myChar:FindFirstChild("Head") or myRoot
+    
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+            local root = plr.Character:FindFirstChild("HumanoidRootPart")
+            if hum and hum.Health > 0 and root then
+                local dir = (root.Position - myHead.Position).Unit
+                for i = 1, 8 do
+                    pcall(function()
+                        DamageEvent:FireServer(plr.Character, root, nil, myHead.Position, dir)
+                    end)
+                end
+            end
+        end
+    end
+end
+
+-- 3. ลูปสแปมสกิลไร้คูลดาวน์ (No Cooldown Loops)
+task.spawn(function()
+    while true do
+        local ran = false
+        
+        -- สแปมสกิล 1 (โล่/พลังพิเศษ)
+        if Config.SpamAbility1 and AbilityEvent then
+            ran = true
+            pcall(function()
+                AbilityEvent:FireServer(1, true, nil)
+            end)
+        end
+        
+        -- สแปมสกิล 2 (มีดดาบ/หายตัว/EMP)
+        if Config.SpamAbility2 and AbilityEvent then
+            ran = true
+            pcall(function()
+                AbilityEvent:FireServer(2, true, nil)
+            end)
+        end
+        
+        -- สแปมมิสไซล์
+        if Config.SpamMissiles and CombatEvent then
+            ran = true
+            local suitVal = getSuitModelValue()
+            pcall(function()
+                CombatEvent:FireServer("WristMissiles", nil, nil, nil, suitVal)
+            end)
+        end
+        
+        -- สแปม Ex-Wife หัวรบยักษ์
+        if Config.SpamExWife and CombatEvent then
+            ran = true
+            local target = getNearestTarget()
+            local myRoot = getRoot(LocalPlayer)
+            local hitPos = target and getRoot(Players:GetPlayerFromCharacter(target)) and getRoot(Players:GetPlayerFromCharacter(target)).Position or (Camera.CFrame.Position + Camera.CFrame.LookVector * 150)
+            local dir = (hitPos - (myRoot and myRoot.Position or Vector3.zero)).Unit
+            local suitVal = getSuitModelValue()
+            pcall(function()
+                CombatEvent:FireServer("ExWife", "nil", hitPos, dir, suitVal)
+            end)
+        end
+        
+        -- สแปมหมัดปืนกลรีพัลเซอร์
+        if Config.SpamRepulsor and CombatEvent then
+            ran = true
+            local target = getNearestTarget()
+            local myRoot = getRoot(LocalPlayer)
+            local hitPos = target and getRoot(Players:GetPlayerFromCharacter(target)) and getRoot(Players:GetPlayerFromCharacter(target)).Position or (Camera.CFrame.Position + Camera.CFrame.LookVector * 120)
+            local suitVal = getSuitModelValue()
+            pcall(function()
+                CombatEvent:FireServer("Repulsor", "Right", hitPos, nil, suitVal)
+                CombatEvent:FireServer("Repulsor", "Left", hitPos, nil, suitVal)
+            end)
+        end
+        
+        -- สแปมพลุความร้อน
+        if Config.SpamFlares and FlaresEvent then
+            ran = true
+            pcall(function()
+                FlaresEvent:FireServer()
+            end)
+        end
+        
+        if ran then
+            task.wait(0.08)
+        else
+            task.wait(0.3)
+        end
+    end
+end)
+
+-- 4. บายพาสคูลดาวน์ภายในเฟรมเวิร์กตัวละคร (Bypass Framework Debounces)
+RunService.Heartbeat:Connect(function()
+    if Config.NoCooldown then
+        local char = getChar(LocalPlayer)
+        if char then
+            for _, scr in ipairs(char:GetChildren()) do
+                if scr:IsA("LocalScript") and string.find(scr.Name, "Ironman") then
+                    pcall(function()
+                        if getsenv then
+                            local env = getsenv(scr)
+                            if env.AbilityCooldown ~= nil then env.AbilityCooldown = false end
+                            if env.UsingAbility ~= nil then env.UsingAbility = false end
+                            if env.laserDebounce ~= nil then env.laserDebounce = false end
+                            if env.punchDebounce ~= nil then env.punchDebounce = false end
+                            if env.ejectDebounce ~= nil then env.ejectDebounce = false end
+                        end
+                    end)
+                end
+            end
+        end
+    end
+end)
+
+-- 5. ลูปการเคลื่อนที่, บินเร็วแสง & กระโดดสูง
+RunService.Heartbeat:Connect(function()
+    local char = getChar(LocalPlayer)
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if Config.SpeedHack and hum.WalkSpeed ~= Config.WalkSpeed then
+                hum.WalkSpeed = Config.WalkSpeed
+            end
+            if hum.JumpPower ~= Config.JumpPower then
+                hum.JumpPower = Config.JumpPower
+            end
+            -- ล็อกเลือดอมตะ (Godmode)
+            if Config.GodmodeLock and hum.Health < hum.MaxHealth then
+                hum.Health = hum.MaxHealth
+            end
+        end
+        
+        -- บูสต์ความเร็วการบินทะลุมิติ
+        if Config.FlightBoost then
+            local bv = char:FindFirstChild("BodyVelocity") or (char:FindFirstChild("HumanoidRootPart") and char.HumanoidRootPart:FindFirstChild("BodyVelocity"))
+            if bv and bv.Velocity.Magnitude > 5 then
+                bv.Velocity = bv.Velocity.Unit * (bv.Velocity.Magnitude * Config.FlightMultiplier)
+            end
+        end
+    end
+end)
+
+-- 6. เดินทะลุกำแพง (Noclip)
+RunService.Stepped:Connect(function()
+    if Config.Noclip then
+        local char = getChar(LocalPlayer)
+        if char then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+end)
+
+-- 7. กระโดดลอยฟ้าไม่จำกัด (Infinite Jump)
+UserInputService.JumpRequest:Connect(function()
+    if Config.InfJump then
+        local char = getChar(LocalPlayer)
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+-- 8. ป้องกันการล้ม / สตัน (Anti-Ragdoll)
+RunService.Heartbeat:Connect(function()
+    if Config.AntiRagdoll then
+        local char = getChar(LocalPlayer)
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            local state = hum:GetState()
+            if state == Enum.HumanoidStateType.Ragdoll or state == Enum.HumanoidStateType.FallingDown then
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end
+        end
+    end
+end)
+
+-- 9. ระบบมองทะลุผู้เล่น (ESP ภาษาไทย)
+local ESPFolder = Instance.new("Folder")
+ESPFolder.Name = "TangHub_Thai_ESP"
+pcall(function() ESPFolder.Parent = CoreGui end)
+if not ESPFolder.Parent then ESPFolder.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+local function updateESP(plr)
+    if plr == LocalPlayer then return end
+    local highlight = ESPFolder:FindFirstChild("HL_" .. plr.Name)
+    local tag = ESPFolder:FindFirstChild("Tag_" .. plr.Name)
+    
+    if not Config.ESP then
+        if highlight then highlight:Destroy() end
+        if tag then tag:Destroy() end
+        return
+    end
+    
+    local char = plr.Character
+    local root = getRoot(plr)
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    
+    if char and root and hum and hum.Health > 0 then
+        if not highlight then
+            highlight = Instance.new("Highlight")
+            highlight.Name = "HL_" .. plr.Name
+            highlight.FillColor = Config.ESPColor
+            highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+            highlight.FillTransparency = 0.5
+            highlight.OutlineTransparency = 0.1
+            highlight.Parent = ESPFolder
+        end
+        highlight.Adornee = char
+        highlight.FillColor = Config.ESPColor
+        
+        if not tag then
+            tag = Instance.new("BillboardGui")
+            tag.Name = "Tag_" .. plr.Name
+            tag.Size = UDim2.new(0, 160, 0, 48)
+            tag.AlwaysOnTop = true
+            tag.StudsOffset = Vector3.new(0, 3.2, 0)
+            tag.Parent = ESPFolder
+            
+            local lbl = Instance.new("TextLabel")
+            lbl.Name = "Info"
+            lbl.Size = UDim2.new(1, 0, 1, 0)
+            lbl.BackgroundTransparency = 1
+            lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+            lbl.TextStrokeTransparency = 0
+            lbl.Font = Enum.Font.GothamBold
+            lbl.TextSize = 12
+            lbl.Parent = tag
+        end
+        tag.Adornee = root
+        
+        local suitName = "ไม่มีชุด"
+        if char:FindFirstChild("Suit") then
+            suitName = char.Suit.Name
+        end
+        local myRoot = getRoot(LocalPlayer)
+        local dist = myRoot and math.floor((root.Position - myRoot.Position).Magnitude) or 0
+        tag.Info.Text = string.format("👤 %s | เลือด: %d\n🛡️ [%s] 📍 %d เมตร", plr.DisplayName, math.floor(hum.Health), suitName, dist)
+    else
+        if highlight then highlight:Destroy() end
+        if tag then tag:Destroy() end
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if Config.ESP then
+        for _, plr in ipairs(Players:GetPlayers()) do
+            updateESP(plr)
+        end
+    end
+end)
+
+-- ===================================================================
+-- สร้างหน้าต่าง TANG HUB (ภาษาไทย 100%)
+-- ===================================================================
+local Hub = Library:CreateHub({
+    Name = "TANG HUB",
+    Subtitle = "ไอรอนแมน: เพลย์กราวด์ (ภาษาไทย)",
+    Scale = 1,
+    ToggleKey = Enum.KeyCode.RightControl,
+    Sounds = false,
+    Hint = "กดปุ่ม '⚡ เปิด/ปิด TANG HUB' บนจอ หรือกด R-Ctrl",
+    AutoOpen = false,
+    Welcome = true
+})
+
+-- -------------------------------------------------------------------
+-- หน้า 1: ชุดเกราะ VIP (เฉพาะชุดที่ต้องเติมเงินซื้อ)
+-- -------------------------------------------------------------------
+local SuitPage = Hub:AddPage({ Name = "ชุดเกราะ VIP", Subtitle = "ปลดล็อกชุด GamePass ทั้งหมด", Icon = "shield" })
+local SpawnSec = SuitPage:AddSection("เสกชุด GamePass ฟรี", "บายพาสระบบซื้อด้วย Robux", "shield")
+
+SpawnSec:AddDropdown({
+    Name = "เลือกชุดที่ต้องซื้อ",
+    Desc = "รวมเฉพาะชุดพิเศษที่ต้องเติม Robux ในเกม",
+    Options = PaidSuits,
+    Default = "Mark85",
+    Callback = function(val)
+        Config.SelectedPaidSuit = val
+    end
+})
+
+SpawnSec:AddButton({
+    Name = "เรียกชุดที่เลือกทันที",
+    Desc = "ส่งคำขอเสกชุดเข้าตัวละครโดยไม่ต้องซื้อ",
+    ButtonText = "เสกชุด",
+    Callback = function()
+        pcall(function()
+            if RequestSuitEvent then RequestSuitEvent:FireServer(Config.SelectedPaidSuit) end
+        end)
+    end
+})
+
+SpawnSec:AddButton({
+    Name = "เสก Mark 85 (นาโนเทค Endgame)",
+    Desc = "ชุดนาโนเทคขั้นเทพ (GamePass ID: 1012604523)",
+    ButtonText = "เสก Mk85",
+    Callback = function()
+        pcall(function()
+            if RequestSuitEvent then RequestSuitEvent:FireServer("Mark85") end
+        end)
+    end
+})
+
+SpawnSec:AddButton({
+    Name = "เสก Mark 44 (ฮัลค์บัสเตอร์ยักษ์)",
+    Desc = "ชุดเกราะยักษ์ถล่มยับ (GamePass ID: 1023347455)",
+    ButtonText = "เสก Mk44",
+    Callback = function()
+        pcall(function()
+            if RequestSuitEvent then RequestSuitEvent:FireServer("Mark44") end
+        end)
+    end
+})
+
+SpawnSec:AddButton({
+    Name = "เสก Model Prime (เกราะไพรม์ไฮเทค)",
+    Desc = "ชุดเกราะนาโนที่แกร่งที่สุด (GamePass ID: 1621960024)",
+    ButtonText = "เสกไพรม์",
+    Callback = function()
+        pcall(function()
+            if RequestSuitEvent then RequestSuitEvent:FireServer("ModelPrime") end
+        end)
+    end
+})
+
+SpawnSec:AddButton({
+    Name = "เสก War Machine 2 (ปืนกลหนัก)",
+    Desc = "วอร์แมชชีนปืนกลถล่ม (GamePass ID: 1031677515)",
+    ButtonText = "เสก WM2",
+    Callback = function()
+        pcall(function()
+            if RequestSuitEvent then RequestSuitEvent:FireServer("WarMachine2") end
+        end)
+    end
+})
+
+SpawnSec:AddButton({
+    Name = "เสก Iron Patriot (เกราะรักชาติ)",
+    Desc = "ไอรอนแพทริออต (GamePass ID: 1031567655)",
+    ButtonText = "เสก Patriot",
+    Callback = function()
+        pcall(function()
+            if RequestSuitEvent then RequestSuitEvent:FireServer("IronPatriot") end
+        end)
+    end
+})
+
+local SuitCtrlSec = SuitPage:AddSection("ระบบควบคุมชุดเกราะ", "ถอดชุด, ระเบิดตัวเอง, โหมดคุ้มกัน", "gear")
+
+SuitCtrlSec:AddButton({
+    Name = "ดีดตัวออกจากชุด (Eject)",
+    Desc = "ก้าวออกจากชุดเกราะทันที",
+    ButtonText = "ถอดชุด",
+    Callback = function()
+        pcall(function()
+            if EjectSuitEvent then EjectSuitEvent:FireServer(false, 0.4) end
+        end)
+    end
+})
+
+SuitCtrlSec:AddButton({
+    Name = "ระเบิดชุดทำลายตัวเอง (Self Destruct)",
+    Desc = "ระเบิดชุดทิ้งทันที",
+    ButtonText = "ระเบิดชุด",
+    Callback = function()
+        pcall(function()
+            if DestroySuitEvent then DestroySuitEvent:FireServer() end
+        end)
+    end
+})
+
+SuitCtrlSec:AddToggle({
+    Name = "โหมดเซนทรี่ (Sentry Mode)",
+    Desc = "สั่งให้ชุดเกราะบินป้องกันตัวเราอัตโนมัติ",
+    Default = false,
+    Callback = function(val)
+        pcall(function()
+            if SentryEvent then SentryEvent:FireServer(val) end
+        end)
+    end
+})
+
+SuitCtrlSec:AddButton({
+    Name = "ยิงพลุความร้อน (Flares)",
+    Desc = "ปล่อยแฟลร์หลบขีปนาวุธทันที",
+    ButtonText = "ปล่อยแฟลร์",
+    Callback = function()
+        pcall(function()
+            if FlaresEvent then FlaresEvent:FireServer() end
+        end)
+    end
+})
+
+-- -------------------------------------------------------------------
+-- หน้า 2: ไม่มีคูลดาวน์ & สกิลเทพ (No Cooldown & Skills)
+-- -------------------------------------------------------------------
+local SkillPage = Hub:AddPage({ Name = "ไร้คูลดาวน์ & สกิล", Subtitle = "สแปมสกิลและอาวุธแบบบ้าคลั่ง", Icon = "bolt" })
+local CdSec = SkillPage:AddSection("ปลดล็อกคูลดาวน์", "ยกเลิกดีเลย์ทุกสกิล", "bolt")
+
+CdSec:AddToggle({
+    Name = "บายพาสคูลดาวน์ (No Cooldown)",
+    Desc = "ล้างตัวจับเวลาคูลดาวน์สกิลทั้งหมดในระบบ",
+    Default = false,
+    Callback = function(val)
+        Config.NoCooldown = val
+    end
+})
+
+CdSec:AddToggle({
+    Name = "สแปมสกิล 1 อัตโนมัติ (ไร้คูลดาวน์)",
+    Desc = "ยิงสกิล 1 รัวๆ ไม่หยุด (โล่บาเรีย / ปืนใหญ่)",
+    Default = false,
+    Callback = function(val)
+        Config.SpamAbility1 = val
+    end
+})
+
+CdSec:AddToggle({
+    Name = "สแปมสกิล 2 อัตโนมัติ (ไร้คูลดาวน์)",
+    Desc = "ยิงสกิล 2 รัวๆ ไม่หยุด (มีดพลังงาน / พรางตัว / EMP)",
+    Default = false,
+    Callback = function(val)
+        Config.SpamAbility2 = val
+    end
+})
+
+CdSec:AddToggle({
+    Name = "สแปมมิสไซล์รัวเต็มจอ",
+    Desc = "ยิงมิสไซล์จากข้อมือเป็นห่าฝน",
+    Default = false,
+    Callback = function(val)
+        Config.SpamMissiles = val
+    end
+})
+
+CdSec:AddToggle({
+    Name = "สแปมหัวรบยักษ์ Ex-Wife",
+    Desc = "ยิงมิสไซล์ทำลายล้างตกใส่เป้าหมายรัวๆ",
+    Default = false,
+    Callback = function(val)
+        Config.SpamExWife = val
+    end
+})
+
+CdSec:AddToggle({
+    Name = "สแปมหมัดปืนกลรีพัลเซอร์",
+    Desc = "ยิงลำแสงรีพัลเซอร์ทั้ง 2 มือรัวเป็นปืนกล",
+    Default = false,
+    Callback = function(val)
+        Config.SpamRepulsor = val
+    end
+})
+
+CdSec:AddToggle({
+    Name = "สแปมพลุความร้อนไม่มีคูลดาวน์",
+    Desc = "ปล่อยแฟลร์รัวตลอดเวลา ไม่มีใครยิงโดน",
+    Default = false,
+    Callback = function(val)
+        Config.SpamFlares = val
+    end
+})
+
+CdSec:AddButton({
+    Name = "กดใช้สกิล 1 ทันที (บายพาส)",
+    Desc = "ยิงสกิล 1 หนึ่งครั้งทันทีโดยไม่ต้องรอคูลดาวน์",
+    ButtonText = "กดใช้",
+    Callback = function()
+        pcall(function()
+            if AbilityEvent then AbilityEvent:FireServer(1, true, nil) end
+        end)
+    end
+})
+
+CdSec:AddButton({
+    Name = "กดใช้สกิล 2 ทันที (บายพาส)",
+    Desc = "ยิงสกิล 2 หนึ่งครั้งทันทีโดยไม่ต้องรอคูลดาวน์",
+    ButtonText = "กดใช้",
+    Callback = function()
+        pcall(function()
+            if AbilityEvent then AbilityEvent:FireServer(2, true, nil) end
+        end)
+    end
+})
+
+-- -------------------------------------------------------------------
+-- หน้า 3: การต่อสู้ขั้นสุดยอด (Combat)
+-- -------------------------------------------------------------------
+local CombatPage = Hub:AddPage({ Name = "การต่อสู้", Subtitle = "ระบบ Kill Aura & สังหารหมู่", Icon = "target" })
+local KillSec = CombatPage:AddSection("ระบบสังหารอัตโนมัติ (Kill Aura)", "ยิงทะลุกำแพงทั่วทั้งแมพ", "target")
+
+KillSec:AddToggle({
+    Name = "เปิด Kill Aura (ลูปสังหาร)",
+    Desc = "สร้างความเสียหายใส่ทุกคนรอบตัวอัตโนมัติ",
+    Default = false,
+    Callback = function(val)
+        Config.KillAura = val
+    end
+})
+
+KillSec:AddButton({
+    Name = "⚡ กวาดล้างทั้งแมพใน 1 คลิก",
+    Desc = "สังหารผู้เล่นทุกคนที่มีชีวิตอยู่ในแมพทันที",
+    ButtonText = "ฆ่าหมดแมพ",
+    Callback = function()
+        killAllOnce()
+    end
+})
+
+KillSec:AddToggle({
+    Name = "โหมดสังหารซ้ำ (Spawn Kill Loop)",
+    Desc = "เกิดใหม่ปุ๊บตายปั๊บ ฆ่าซ้ำรัวๆ ไม่ให้ได้เล่น",
+    Default = false,
+    Callback = function(val)
+        Config.SpawnKillLoop = val
+    end
+})
+
+KillSec:AddToggle({
+    Name = "โจมตีเฉพาะคนที่ใกล้ที่สุดเท่านั้น",
+    Desc = "โฟกัสยิงคนใกล้ตัวคนเดียว",
+    Default = false,
+    Callback = function(val)
+        Config.KillAuraNearestOnly = val
+    end
+})
+
+KillSec:AddSlider({
+    Name = "ความเร็วดาเมจ (ดีเลย์ต่อรอบ)",
+    Desc = "ยิ่งน้อยยิ่งยิงรัวขึ้น",
+    Min = 0.05,
+    Max = 1.0,
+    Default = 0.2,
+    Increment = 0.05,
+    Suffix = " วิ",
+    Callback = function(val)
+        Config.KillAuraDelay = val
+    end
+})
+
+KillSec:AddSlider({
+    Name = "ระยะการโจมตี (Studs)",
+    Desc = "ระยะทางที่ Kill Aura จะตามไปสังหาร",
+    Min = 100,
+    Max = 5000,
+    Default = 3000,
+    Increment = 100,
+    Suffix = " studs",
+    Callback = function(val)
+        Config.KillAuraRange = val
+    end
+})
+
+KillSec:AddDropdown({
+    Name = "ตำแหน่งชิ้นส่วนที่โจมตี",
+    Desc = "เลือกจุดที่ให้ดาเมจเข้า",
+    Options = {"HumanoidRootPart", "Head", "UpperTorso"},
+    Default = "HumanoidRootPart",
+    Callback = function(val)
+        Config.KillAuraTargetPart = val
+    end
+})
+
+-- -------------------------------------------------------------------
+-- หน้า 4: การเคลื่อนที่ & การบิน (Movement & Flight)
+-- -------------------------------------------------------------------
+local MovePage = Hub:AddPage({ Name = "การเคลื่อนที่", Subtitle = "บินเร็วแสง, วิ่งเร็ว, วาร์ป", Icon = "bolt" })
+local FlightSec = MovePage:AddSection("ระบบความเร็วการบินขั้นเทพ", "ปลดล็อกความเร็วชุดเกราะ", "bolt")
+
+FlightSec:AddToggle({
+    Name = "บูสต์ความเร็วการบิน (Super Flight)",
+    Desc = "คูณความเร็วการบินของชุดเกราะให้พุ่งทะยาน",
+    Default = false,
+    Callback = function(val)
+        Config.FlightBoost = val
+    end
+})
+
+FlightSec:AddSlider({
+    Name = "ตัวคูณความเร็วการบิน",
+    Desc = "ปรับตัวคูณความเร็วบินให้สูงขึ้น",
+    Min = 2,
+    Max = 15,
+    Default = 4,
+    Increment = 1,
+    Suffix = " เท่า",
+    Callback = function(val)
+        Config.FlightMultiplier = val
+    end
+})
+
+FlightSec:AddToggle({
+    Name = "เปิดวิ่งเร็ว (Speed Hack)",
+    Desc = "ล็อกความเร็วการเดินตามใจชอบ",
+    Default = false,
+    Callback = function(val)
+        Config.SpeedHack = val
+        if not val then
+            local hum = getChar(LocalPlayer) and getChar(LocalPlayer):FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = 16 end
+        end
+    end
+})
+
+FlightSec:AddSlider({
+    Name = "ความเร็วเดิน (WalkSpeed)",
+    Desc = "ปรับความเร็วเดินของตัวละคร",
+    Min = 16,
+    Max = 400,
+    Default = 16,
+    Increment = 4,
+    Suffix = " studs",
+    Callback = function(val)
+        Config.WalkSpeed = val
+    end
+})
+
+FlightSec:AddSlider({
+    Name = "แรงกระโดด (JumpPower)",
+    Desc = "ปรับระดับความสูงการกระโดด",
+    Min = 50,
+    Max = 400,
+    Default = 50,
+    Increment = 10,
+    Suffix = " pwr",
+    Callback = function(val)
+        Config.JumpPower = val
+    end
+})
+
+FlightSec:AddToggle({
+    Name = "เดินทะลุกำแพงและตึก (Noclip)",
+    Desc = "บินหรือเดินทะลุสิ่งกีดขวางทุกชนิด",
+    Default = false,
+    Callback = function(val)
+        Config.Noclip = val
+    end
+})
+
+FlightSec:AddToggle({
+    Name = "กระโดดบนอากาศไม่จำกัด (Inf Jump)",
+    Desc = "กดกระโดดกลางอากาศลอยขึ้นเรื่อยๆ",
+    Default = false,
+    Callback = function(val)
+        Config.InfJump = val
+    end
+})
+
+local TPSec = MovePage:AddSection("ระบบวาร์ปตำแหน่ง (Teleport)", "วาร์ปไปหาคนอื่นทันที", "flag")
+
+local function getPlayerNames()
+    local names = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(names, p.Name)
+        end
+    end
+    if #names == 0 then table.insert(names, "ไม่มีผู้เล่นอื่นในเซิร์ฟ") end
+    return names
+end
+
+TPSec:AddDropdown({
+    Name = "เลือกผู้เล่นเป้าหมาย",
+    Desc = "เลือกคนที่ต้องการวาร์ปไปหา",
+    Options = getPlayerNames(),
+    Default = getPlayerNames()[1],
+    Callback = function(val)
+        Config.SelectedPlayer = val
+    end
+})
+
+TPSec:AddButton({
+    Name = "วาร์ปไปหาผู้เล่นที่เลือก",
+    Desc = "วาร์ปไปข้างหลังผู้เล่นทันที",
+    ButtonText = "วาร์ปไปหา",
+    Callback = function()
+        local target = Players:FindFirstChild(Config.SelectedPlayer)
+        local targetRoot = target and getRoot(target)
+        local myRoot = getRoot(LocalPlayer)
+        if targetRoot and myRoot then
+            myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 4)
+        end
+    end
+})
+
+TPSec:AddButton({
+    Name = "วาร์ปขึ้นฟ้าเขตปลอดภัย (Sky Safe)",
+    Desc = "วาร์ปสูงขึ้นไป 2,000 เมตรบนท้องฟ้า",
+    ButtonText = "วาร์ปขึ้นฟ้า",
+    Callback = function()
+        local myRoot = getRoot(LocalPlayer)
+        if myRoot then
+            myRoot.CFrame = myRoot.CFrame + Vector3.new(0, 2000, 0)
+        end
+    end
+})
+
+-- -------------------------------------------------------------------
+-- หน้า 5: มองทะลุ (ESP Visuals)
+-- -------------------------------------------------------------------
+local VisualPage = Hub:AddPage({ Name = "มองทะลุ (ESP)", Subtitle = "เรืองแสงเห็นตำแหน่งทุกคน", Icon = "eye" })
+local ESPSec = VisualPage:AddSection("ระบบ ESP ผู้เล่น", "แสดงกรอบเรืองแสงและข้อมูลผู้เล่น", "eye")
+
+ESPSec:AddToggle({
+    Name = "เปิด ESP มองทะลุผู้เล่น (Chams)",
+    Desc = "ทำให้เห็นตัวผู้เล่นทุกคนทะลุกำแพง",
+    Default = false,
+    Callback = function(val)
+        Config.ESP = val
+        if not val then
+            for _, c in ipairs(ESPFolder:GetChildren()) do
+                c:Destroy()
+            end
+        end
+    end
+})
+
+ESPSec:AddButton({
+    Name = "เปิดไฟสว่างทั้งแมพ (Fullbright)",
+    Desc = "เปลี่ยนเวลาเป็นกลางวันแดดจ้า ไร้เงามืด",
+    ButtonText = "เปิดไฟสว่าง",
+    Callback = function()
+        Lighting.Brightness = 2
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 100000
+        Lighting.GlobalShadows = false
+        Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+    end
+})
+
+-- -------------------------------------------------------------------
+-- หน้า 6: อมตะ & ป้องกัน (Defense & Godmode)
+-- -------------------------------------------------------------------
+local DefPage = Hub:AddPage({ Name = "อมตะ & ป้องกัน", Subtitle = "ป้องกันการล้มและล็อกเลือด", Icon = "user" })
+local DefSec = DefPage:AddSection("ระบบความปลอดภัยตัวละคร", "ลดความเสี่ยงตายและสตัน", "shield")
+
+DefSec:AddToggle({
+    Name = "ป้องกันการล้ม/สตัน (Anti-Ragdoll)",
+    Desc = "เมื่อโดนกระแทกล้ม ตัวละครจะลุกขึ้นยืนทันที",
+    Default = false,
+    Callback = function(val)
+        Config.AntiRagdoll = val
+    end
+})
+
+DefSec:AddToggle({
+    Name = "ล็อกเลือดอมตะ (Health Lock)",
+    Desc = "ล็อกเลือดให้เต็มตลอดเวลาเมื่อโดนดาเมจ",
+    Default = false,
+    Callback = function(val)
+        Config.GodmodeLock = val
+    end
+})
+
+DefSec:AddButton({
+    Name = "รีเซ็ตตัวละคร (เกิดใหม่)",
+    Desc = "ตายแล้วเกิดใหม่ทันทีเมื่อติดบั๊ก",
+    ButtonText = "เกิดใหม่",
+    Callback = function()
+        local hum = getChar(LocalPlayer) and getChar(LocalPlayer):FindFirstChildOfClass("Humanoid")
+        if hum then hum.Health = 0 end
+    end
+})
+
+-- -------------------------------------------------------------------
+-- สร้างปุ่มลอยบนหน้าจอสำหรับเปิด/ปิดเมนู (Floating Toggle Button)
+-- -------------------------------------------------------------------
+local targetGuiParent = (gethui and gethui()) or CoreGui or LocalPlayer:WaitForChild("PlayerGui")
+local ToggleGui = Instance.new("ScreenGui")
+ToggleGui.Name = "TangHub_Thai_ToggleBtn"
+ToggleGui.ResetOnSpawn = false
+ToggleGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "OpenButton"
+ToggleBtn.Size = UDim2.fromOffset(140, 38)
+ToggleBtn.Position = UDim2.new(0, 20, 0.45, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(15, 30, 55)
+ToggleBtn.BorderSizePixel = 0
+ToggleBtn.Text = "⚡ TANG HUB (เปิด/ปิด)"
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 12
+ToggleBtn.Active = true
+ToggleBtn.Draggable = true
+ToggleBtn.Parent = ToggleGui
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 8)
+btnCorner.Parent = ToggleBtn
+
+local btnStroke = Instance.new("UIStroke")
+btnStroke.Color = Color3.fromRGB(45, 125, 255)
+btnStroke.Thickness = 1.5
+btnStroke.Parent = ToggleBtn
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    Hub:Toggle()
+end)
+
+pcall(function()
+    ToggleGui.Parent = targetGuiParent
+end)
+
+-- เปิดหน้าต่างเข้าสู่หน้าแรก (ชุดเกราะ VIP) อัตโนมัติหลังโหลดเสร็จ
+task.spawn(function()
+    task.wait(0.5)
+    pcall(function()
+        Hub:OpenPage(SuitPage)
+    end)
+end)
+
+-- แจ้งเตือนภาษาไทย
+Library:Notify({
+    Title = "🇹🇭 TANG HUB พร้อมใช้งาน",
+    Content = "โหลดระบบโกงภาษาไทยครบทุกฟังก์ชั่นเรียบร้อยแล้ว!",
+    Duration = 5
+})
